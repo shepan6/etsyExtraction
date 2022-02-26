@@ -63,7 +63,10 @@ class EtsyShopScraper:
     self.etsy_shop = self.set_etsy_shop(data=data)
 
   def set_etsy_shop(self, data) -> EtsyShop:
+
     data = data["results"][0]
+    assert data["shop_name"] == self.shop_name, "Returned Etsy Shop name {} does not equal inputted shop name {}.".format(data["shop_id"], self.shop_name)
+
     etsy_shop = EtsyShop(
       shop_id=data['shop_id'],
       shop_name=data['shop_name'],
@@ -116,6 +119,29 @@ class EtsyShopScraper:
         break
 
     return all_reviews
+
+  @staticmethod
+  def convert_Review_to_DataFrame(review: Review) -> pd.DataFrame:
+
+    df = pd.DataFrame(review).T
+    df.columns = df.iloc[0, :]
+    df = pd.DataFrame(df.iloc[1, :]).T
+
+    return df
+
+  def save_all_data(self, all_reviews: list[Review]):
+
+    data: pd.DataFrame = None
+
+    for review in all_reviews:
+      df = self.convert_Review_to_DataFrame(review=review)
+      try:
+        data = pd.concat([data, df], ignore_index=True)
+      except ValueError:
+        data = df
+
+    data.to_csv(os.path.join("data", f"{self.shop_name}_etsy_reviews.csv"))
+
 
 def add(x, y):
   return x + y
