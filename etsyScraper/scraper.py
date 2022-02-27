@@ -1,3 +1,4 @@
+from urllib import response
 import pandas as pd
 import requests
 import json
@@ -5,6 +6,9 @@ import os
 import time
 from etsyTypes import EtsyShop, Review
 from typing import Tuple
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 class InvalidEtsyAPIKeyError(Exception):
 
@@ -48,19 +52,49 @@ class EtsyShopScraper:
     response = requests.get(f"{self.api_url}openapi-ping", headers=self.etsy_header)
     if self.is_200_code(response=response):
       success = True
+      logging.info("Successful ping to Etsy API!")
       return success
     else:
+      logging.error("Ping to Etsy API unsuccessful!")
       return success
 
-  def get_etsy_shop(self):
+  def execute_get_etsy_shop_query(self) -> requests.Response:
     endpoint_key = "getShopId"
     query_header = self.etsy_header
     query_header['shop_name'] = self.shop_name
     query_header['limit'] = 1
-    response = requests.get(f"{self.api_url}{self.endpoints[endpoint_key]}", headers=query_header)
-    data = response.json()
+    logging.info()
+    response: requests.Response = requests.get(f"{self.api_url}{self.endpoints[endpoint_key]}", headers=query_header)
 
-    self.etsy_shop = self.set_etsy_shop(data=data)
+    return response
+
+  def is_get_etsy_shop_output_successful(self, response: requests.Response):
+    if self.is_200_code(response=response):
+      return True
+    elif response.response_status != 500:
+      raise EtsyAPIResponseError(response=response)
+    else:
+      return False
+
+  def get_etsy_shop(self):
+
+    response: requests.Response = self.execute_get_etsy_shop_query()
+
+    if self.is_get_etsy_shop_output_successful(response=response):
+      data = response.json()
+      self.etsy_shop = self.set_etsy_shop(data=data)
+      logging.info("Successful etsy shop extraction")
+    else:
+      logging.warning("Initial get etsy shop API call failed...")
+      for wait_multiplier in range(1,4):
+        waiting_seconds: int = wait_multiplier*100
+        logging.info(f"Retry {wait_multiplier}: waiting for {waiting_seconds}")
+        time.sleep(waiting_seconds)
+        response = self.execute_get_etsy_shop_query()
+        if self.is_get_etsy_shop_output_successful(response=response):
+          data = response.json()
+          self.etsy_shop = self.set_etsy_shop(data=data)
+          logging.info("Successful etsy shop extraction")
 
   def set_etsy_shop(self, data) -> EtsyShop:
 
@@ -112,6 +146,7 @@ class EtsyShopScraper:
     limit: int = 100
 
     while len(all_reviews) % limit == 0 or review_count > limit:
+      logging.info(f"{len(all_reviews)} {self.shop_name} product reviews are currently extracted.")
       reviews = self.get_shop_reviews(offset=offset)
       all_reviews.extend(reviews)
       offset = len(all_reviews)
